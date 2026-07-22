@@ -17,20 +17,27 @@ def get_stock_data():
         "Tesla":     "TSLA",
         "Amazon":    "AMZN"
     }
-    
+
     data = []
+    errors = []
+
     for company, symbol in symbols.items():
         try:
             ticker = yf.Ticker(symbol)
-            hist = ticker.history(period="2d")
+            hist = ticker.history(period="5d")  # buffer in case a day is missing
+
+            if hist.empty or len(hist) < 2:
+                errors.append(f"{company} ({symbol}): not enough price history returned")
+                continue
+
             info = ticker.info
-            
+
             current_price = round(hist["Close"].iloc[-1], 2)
             prev_price = round(hist["Close"].iloc[-2], 2)
             change = round(((current_price - prev_price) / prev_price) * 100, 2)
             volume = int(hist["Volume"].iloc[-1])
             market_cap = round(info.get("marketCap", 0) / 1e9, 1)
-            
+
             data.append({
                 "Company": company,
                 "Symbol": symbol,
@@ -39,10 +46,10 @@ def get_stock_data():
                 "Volume": volume,
                 "MarketCap": market_cap
             })
-        except:
-            pass
-    
-    return pd.DataFrame(data)
+        except Exception as e:
+            errors.append(f"{company} ({symbol}): {e}")
+
+    return pd.DataFrame(data), errors
 
 # ============================================
 # PAGE CONFIG
@@ -57,7 +64,17 @@ st.set_page_config(
 # LOAD DATA
 # ============================================
 with st.spinner("Fetching live market data... 📡"):
-    df = get_stock_data()
+    df, fetch_errors = get_stock_data()
+
+if fetch_errors:
+    with st.expander(f"⚠️ {len(fetch_errors)} ticker(s) failed to load"):
+        for err in fetch_errors:
+            st.write(f"- {err}")
+
+if df.empty:
+    st.error("No market data could be fetched right now. This is usually a temporary "
+              "rate limit from Yahoo Finance — try clicking Refresh in a minute.")
+    st.stop()
 
 # ============================================
 # SIDEBAR
@@ -137,84 +154,83 @@ with tab3:
 with tab4:
     st.subheader("⚡ Compare Two Companies")
 
-    col_a, col_b = st.columns(2)
+    if len(df) < 2:
+        st.info("Need at least two companies with live data to compare. "
+                 "Check the warning banner above for what failed to load.")
+    else:
+        col_a, col_b = st.columns(2)
 
-    with col_a:
-        company_a = st.selectbox(
-            "Select Company A", 
-            df["Company"], 
-            key="company_a"
-            )
+        with col_a:
+            company_a = st.selectbox(
+                "Select Company A",
+                df["Company"],
+                key="company_a"
+                )
 
-    with col_b:
-        company_b = st.selectbox(
-            "Select Company B", 
-            df["Company"],
-            index=1,
-            key="company_b"
-            )
+        with col_b:
+            default_b_index = 1 if len(df["Company"]) > 1 else 0
+            company_b = st.selectbox(
+                "Select Company B",
+                df["Company"],
+                index=default_b_index,
+                key="company_b"
+                )
 
-    data_a = df[df["Company"] == company_a].iloc[0]
-    data_b = df[df["Company"] == company_b].iloc[0]
+        data_a = df[df["Company"] == company_a].iloc[0]
+        data_b = df[df["Company"] == company_b].iloc[0]
 
-    st.divider()
+        st.divider()
 
-    col1, col2, col3 = st.columns(3)
+        col_left, col_right = st.columns(2)
 
-    col1.metric("","")
+        with col_left:
+            st.subheader(f"🔵 {company_a}")
+            st.metric("Price", f"${data_a['Price']}")
+            st.metric("Change", f"{data_a['Change']}%")
+            st.metric("Market Cap", f"${data_a['MarketCap']}B")
+            st.metric("Volume", f"{data_a['Volume']:,}")
 
-    col_left, col_right = st.columns(2)
+            if data_a['Change'] > 0:
+                st.success(f"▲ +{data_a['Change']}%")
+            else:
+                st.error(f"▼ {data_a['Change']}%")
 
-    with col_left:
-        st.subheader(f"🔵 {company_a}")
-        st.metric("Price", f"${data_a['Price']}")
-        st.metric("Change", f"{data_a['Change']}%")
-        st.metric("Market Cap", f"${data_a['MarketCap']}B")
-        st.metric("Volume", f"{data_a['Volume']:,}")
-        
-        if data_a['Change'] > 0:
-            st.success(f"▲ +{data_a['Change']}%")
-        else:
-            st.error(f"▼ {data_a['Change']}%")
+        with col_right:
+            st.subheader(f"🔴 {company_b}")
+            st.metric("Price", f"${data_b['Price']}")
+            st.metric("Change", f"{data_b['Change']}%")
+            st.metric("Market Cap", f"${data_b['MarketCap']}B")
+            st.metric("Volume", f"{data_b['Volume']:,}")
 
+            if data_b['Change'] > 0:
+                st.success(f"▲ +{data_b['Change']}%")
+            else:
+                st.error(f"▼ {data_b['Change']}%")
 
-    with col_right:
-        st.subheader(f"🔴 {company_b}")
-        st.metric("Price", f"${data_b['Price']}")
-        st.metric("Change", f"{data_b['Change']}%")
-        st.metric("Market Cap", f"${data_b['MarketCap']}B")
-        st.metric("Volume", f"{data_b['Volume']:,}")
-        
-        if data_b['Change'] > 0:
-            st.success(f"▲ +{data_b['Change']}%")
-        else:
-            st.error(f"▼ {data_b['Change']}%")
+        st.divider()
 
+        compare_df = pd.DataFrame({
+            "Company": [company_a, company_b],
+            "Price": [data_a['Price'], data_b['Price']],
+            "Change": [data_a['Change'], data_b['Change']],
+            "MarketCap": [data_a['MarketCap'], data_b['MarketCap']],
+        })
 
-    st.divider()
+        metric_choice = st.radio(
+            "Compare by:",
+            ["Price", "MarketCap", "Change"],
+            horizontal=True
+        )
 
-    compare_df = pd.DataFrame({
-        "Company": [company_a, company_b],
-        "Price": [data_a['Price'], data_b['Price']],
-        "Change": [data_a['Change'],data_b['Change']],
-        "MarketCap": [data_a['MarketCap'], data_b['MarketCap']],
-    })
-
-    metric_choice = st.radio(
-        "Compare by:",
-        ["Price", "MarketCap", "Change"],
-        horizontal=True
-    )
-    
-    fig_compare = px.bar(
-        compare_df,
-        x="Company",
-        y=metric_choice,
-        color="Company",
-        title=f"{company_a} vs {company_b} — {metric_choice}",
-        color_discrete_sequence=["#636EFA", "#EF553B"]
-    )
-    st.plotly_chart(fig_compare, use_container_width=True)
+        fig_compare = px.bar(
+            compare_df,
+            x="Company",
+            y=metric_choice,
+            color="Company",
+            title=f"{company_a} vs {company_b} — {metric_choice}",
+            color_discrete_sequence=["#636EFA", "#EF553B"]
+        )
+        st.plotly_chart(fig_compare, use_container_width=True)
 
 
 with tab5:
