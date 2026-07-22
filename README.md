@@ -2,7 +2,7 @@
 
 A real-time stock market dashboard built with Streamlit — tracks live prices for major tech stocks, compares companies side-by-side, and includes a built-in financial literacy section for beginners.
 
-**[🔗 Live Demo](#)** *(add your Streamlit Cloud link here after redeploying)*
+**[🔗 Live Demo](https://harmin-stockmarket-dashboard.streamlit.app/)**
 
 ![Dashboard Preview](assets/Screenshot.png)
 
