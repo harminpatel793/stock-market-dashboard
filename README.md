@@ -4,8 +4,7 @@ A real-time stock market dashboard built with Streamlit — tracks live prices f
 
 **[🔗 Live Demo](#)** *(add your Streamlit Cloud link here after redeploying)*
 
-![Dashboard Preview](screenshot.png)
-*(add a screenshot of the dashboard here — drag an image file into this repo and update the filename above)*
+![Dashboard Preview](assets/Screenshot.png)
 
 ---
 
